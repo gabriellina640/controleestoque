@@ -1,0 +1,44 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if exist requirements.txt (
+            pip install -r requirements.txt
+        ) else (
+            pip install pyqt6
+        )
+
+    - name: Clean previous builds
+      run: |
+        rmdir /s /q build || echo "No build folder"
+        rmdir /s /q dist || echo "No dist folder"
+        del /f /q *.spec || echo "No spec file"
+
+    - name: Build executable
+      run: |
+        pyinstaller --onefile --windowed main.py --name RTImportacoes
+
+    - name: Upload executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: RTImportacoes.exe
+        path: dist/RTImportacoes.exe

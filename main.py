@@ -1,145 +1,140 @@
 from PyQt6 import QtWidgets, QtCore
-from PyQt6.QtCore import Qt, QDate
-import sys
 from datetime import datetime
-from models import Product, Sale, load_data, save_data
+import sys, json, os
 
+# 📁 Pasta de dados
+APP_NAME = "RTImportacoes"
+if os.name == "nt":
+    DATA_DIR = os.path.join(os.getenv("LOCALAPPDATA"), APP_NAME)
+else:
+    DATA_DIR = os.path.join(os.path.expanduser("~"), f".{APP_NAME.lower()}")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_FILE = os.path.join(DATA_DIR, "database.json")
+
+# 📝 Classes
+class Product:
+    def __init__(self, id, name, price, quantity):
+        self.id = id
+        self.name = name
+        self.price = price
+        self.quantity = quantity
+        self.date_added = datetime.now().isoformat()
+
+class Sale:
+    def __init__(self, product_id, quantity_sold, total):
+        self.product_id = product_id
+        self.quantity_sold = quantity_sold
+        self.total = total
+        self.date = datetime.now().isoformat()
+
+# 💾 Funções de persistência
+def load_data():
+    if not os.path.exists(DB_FILE):
+        return {"products": [], "sales": []}
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
+
+def save_data(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+# 🖥️ App
 class InventoryApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Controle de Estoque RTimportações")
-        self.setGeometry(200, 100, 1000, 600)
+        self.setWindowTitle(APP_NAME)
+        self.setGeometry(200, 100, 950, 550)
         self.data = load_data()
-        self.clean_sales()
         self.setup_ui()
         self.update_product_table()
         self.update_sales_table()
 
-    # Remove vendas de produtos excluídos
-    def clean_sales(self):
-        active_ids = {p["id"] for p in self.data["products"]}
-        self.data["sales"] = [s for s in self.data["sales"] if s["product_id"] in active_ids]
-        save_data(self.data)
-
-    # Configuração da UI
     def setup_ui(self):
-        # Menu à direita
-        menu_bar = self.menuBar()
-        menu_bar.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        menu_actions = QtWidgets.QMenu("Menu", self)
-        menu_bar.addMenu(menu_actions)
-
-        menu_actions.addAction("Adicionar Produto", self.add_product)
-        menu_actions.addAction("Editar Produto", self.edit_product)
-        menu_actions.addAction("Excluir Produto", self.delete_product)
-        menu_actions.addAction("Registrar Venda", self.sell_product)
-        menu_actions.addAction("Total Vendido", self.total_sales)
-        menu_actions.addAction("Total por Período", self.total_sales_period)
-
-        # Central com abas
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         layout = QtWidgets.QVBoxLayout()
         central.setLayout(layout)
 
-        self.tabs = QtWidgets.QTabWidget()
-        layout.addWidget(self.tabs)
+        # Menu suspenso
+        menubar = self.menuBar()
+        menu = menubar.addMenu("Menu")
+        menu.addAction("Total Vendido", self.total_sales)
+        menu.addAction("Total por Período", self.total_sales_period)
 
-        # Aba Produtos
-        self.tab_products = QtWidgets.QWidget()
-        tab_layout = QtWidgets.QVBoxLayout()
-        self.tab_products.setLayout(tab_layout)
-        self.tabs.addTab(self.tab_products, "Produtos")
-
-        search_layout = QtWidgets.QHBoxLayout()
-        tab_layout.addLayout(search_layout)
+        # Busca produtos
         self.search_input = QtWidgets.QLineEdit()
-        self.search_input.setPlaceholderText("Buscar produto pelo nome...")
-        self.search_input.textChanged.connect(self.search_products)
-        search_layout.addWidget(self.search_input)
+        self.search_input.setPlaceholderText("Buscar produto...")
+        self.search_input.textChanged.connect(self.update_product_table)
+        layout.addWidget(self.search_input)
 
+        # Tabela produtos
         self.product_table = QtWidgets.QTableWidget()
-        self.product_table.setColumnCount(4)
-        self.product_table.setHorizontalHeaderLabels(["ID", "Nome", "Preço", "Quantidade"])
+        self.product_table.setColumnCount(5)
+        self.product_table.setHorizontalHeaderLabels(["ID", "Nome", "Preço", "Quantidade", "Ações"])
         self.product_table.horizontalHeader().setStretchLastSection(True)
         self.product_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-        tab_layout.addWidget(self.product_table)
+        layout.addWidget(self.product_table)
 
-        # Aba Vendas
-        self.tab_sales = QtWidgets.QWidget()
-        sales_layout = QtWidgets.QVBoxLayout()
-        self.tab_sales.setLayout(sales_layout)
-        self.tabs.addTab(self.tab_sales, "Vendas")
+        # Botões
+        btn_layout = QtWidgets.QHBoxLayout()
+        layout.addLayout(btn_layout)
+        self.btn_add = QtWidgets.QPushButton("Adicionar Produto")
+        self.btn_add.clicked.connect(self.add_product)
+        btn_layout.addWidget(self.btn_add)
 
-        # Filtros de vendas
-        filter_layout = QtWidgets.QHBoxLayout()
-        sales_layout.addLayout(filter_layout)
+        self.btn_sell = QtWidgets.QPushButton("Registrar Venda")
+        self.btn_sell.clicked.connect(self.sell_product)
+        btn_layout.addWidget(self.btn_sell)
 
-        self.sales_search_input = QtWidgets.QLineEdit()
-        self.sales_search_input.setPlaceholderText("Buscar vendas por produto...")
-        self.sales_search_input.textChanged.connect(self.filter_sales)
-        filter_layout.addWidget(self.sales_search_input)
+        # Busca vendas
+        self.sales_search = QtWidgets.QLineEdit()
+        self.sales_search.setPlaceholderText("Buscar venda por produto...")
+        self.sales_search.textChanged.connect(self.update_sales_table)
+        layout.addWidget(self.sales_search)
 
-        self.start_date = QtWidgets.QDateEdit()
-        self.start_date.setCalendarPopup(True)
-        self.start_date.setDisplayFormat("dd/MM/yyyy")
-        self.start_date.setDate(QDate.currentDate().addMonths(-1))
-        filter_layout.addWidget(self.start_date)
-
-        self.end_date = QtWidgets.QDateEdit()
-        self.end_date.setCalendarPopup(True)
-        self.end_date.setDisplayFormat("dd/MM/yyyy")
-        self.end_date.setDate(QDate.currentDate())
-        filter_layout.addWidget(self.end_date)
-
-        btn_filter = QtWidgets.QPushButton("Filtrar")
-        btn_filter.clicked.connect(self.filter_sales)
-        filter_layout.addWidget(btn_filter)
-
+        # Tabela vendas
         self.sales_table = QtWidgets.QTableWidget()
         self.sales_table.setColumnCount(5)
-        self.sales_table.setHorizontalHeaderLabels(["Produto", "Quantidade", "Total", "Data", "Produto ID"])
+        self.sales_table.setHorizontalHeaderLabels(["Produto", "Quantidade", "Total", "Data", "ID Produto"])
         self.sales_table.horizontalHeader().setStretchLastSection(True)
-        self.sales_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
-        sales_layout.addWidget(self.sales_table)
+        layout.addWidget(self.sales_table)
 
-    # Atualizações
-    def update_product_table(self, filtered=None):
-        products = filtered if filtered is not None else self.data["products"]
+    # Atualiza produtos
+    def update_product_table(self):
+        search_text = self.search_input.text().lower()
+        products = [p for p in self.data["products"] if search_text in p["name"].lower()]
         self.product_table.setRowCount(len(products))
         for row, p in enumerate(products):
             self.product_table.setItem(row, 0, QtWidgets.QTableWidgetItem(p["id"]))
             self.product_table.setItem(row, 1, QtWidgets.QTableWidgetItem(p["name"]))
             self.product_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"R${p['price']}"))
             self.product_table.setItem(row, 3, QtWidgets.QTableWidgetItem(str(p["quantity"])))
+            # Botões de ação
+            btn_edit = QtWidgets.QPushButton("Editar")
+            btn_edit.clicked.connect(lambda checked, pid=p["id"]: self.edit_product(pid))
+            btn_delete = QtWidgets.QPushButton("Excluir")
+            btn_delete.clicked.connect(lambda checked, pid=p["id"]: self.delete_product(pid))
+            widget = QtWidgets.QWidget()
+            h_layout = QtWidgets.QHBoxLayout()
+            h_layout.addWidget(btn_edit)
+            h_layout.addWidget(btn_delete)
+            h_layout.setContentsMargins(0,0,0,0)
+            widget.setLayout(h_layout)
+            self.product_table.setCellWidget(row, 4, widget)
 
-    def update_sales_table(self, filtered=None):
-        sales = filtered if filtered is not None else self.data["sales"]
+    # Atualiza vendas
+    def update_sales_table(self):
+        search_text = self.sales_search.text().lower()
+        sales = [s for s in self.data["sales"]
+                 if any(p["id"]==s["product_id"] and search_text in p["name"].lower() for p in self.data["products"])]
         self.sales_table.setRowCount(len(sales))
         for row, s in enumerate(sales):
-            product_name = next((p["name"] for p in self.data["products"] if p["id"] == s["product_id"]), "Excluído")
-            self.sales_table.setItem(row, 0, QtWidgets.QTableWidgetItem(product_name))
+            prod = next((p for p in self.data["products"] if p["id"]==s["product_id"]), None)
+            self.sales_table.setItem(row, 0, QtWidgets.QTableWidgetItem(prod["name"] if prod else "Produto excluído"))
             self.sales_table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(s["quantity_sold"])))
             self.sales_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"R${s['total']}"))
-            self.sales_table.setItem(row, 3, QtWidgets.QTableWidgetItem(datetime.fromisoformat(s["date"]).strftime("%d/%m/%Y %H:%M")))
+            self.sales_table.setItem(row, 3, QtWidgets.QTableWidgetItem(s["date"]))
             self.sales_table.setItem(row, 4, QtWidgets.QTableWidgetItem(s["product_id"]))
-
-    # Busca produtos
-    def search_products(self, text):
-        filtered = [p for p in self.data["products"] if text.lower() in p["name"].lower()]
-        self.update_product_table(filtered)
-
-    # Filtro vendas
-    def filter_sales(self):
-        text = self.sales_search_input.text().lower()
-        start = self.start_date.date().toPyDate()
-        end = self.end_date.date().toPyDate()
-        filtered = [
-            s for s in self.data["sales"]
-            if start <= datetime.fromisoformat(s["date"]).date() <= end
-            and text in next((p["name"].lower() for p in self.data["products"] if p["id"] == s["product_id"]), "")
-        ]
-        self.update_sales_table(filtered)
 
     # Adicionar produto
     def add_product(self):
@@ -150,49 +145,30 @@ class InventoryApp(QtWidgets.QMainWindow):
         quantity, ok = QtWidgets.QInputDialog.getInt(self, "Produto", "Quantidade:")
         if not ok: return
         product_id = str(len(self.data["products"]) + 1)
-        product = Product(product_id, name, price, quantity)
-        self.data["products"].append(product.__dict__)
+        self.data["products"].append(Product(product_id, name, price, quantity).__dict__)
         save_data(self.data)
         self.update_product_table()
 
     # Editar produto
-    def edit_product(self):
-        selected = self.product_table.currentRow()
-        if selected == -1:
-            QtWidgets.QMessageBox.warning(self, "Aviso", "Selecione um produto")
-            return
-        product = self.data["products"][selected]
+    def edit_product(self, product_id):
+        product = next(p for p in self.data["products"] if p["id"]==product_id)
         name, ok = QtWidgets.QInputDialog.getText(self, "Editar Produto", "Nome:", text=product["name"])
-        if not ok or not name: return
+        if not ok: return
         price, ok = QtWidgets.QInputDialog.getDouble(self, "Editar Produto", "Preço:", value=product["price"])
         if not ok: return
         quantity, ok = QtWidgets.QInputDialog.getInt(self, "Editar Produto", "Quantidade:", value=product["quantity"])
         if not ok: return
-        product["name"] = name
-        product["price"] = price
-        product["quantity"] = quantity
+        product["name"], product["price"], product["quantity"] = name, price, quantity
         save_data(self.data)
         self.update_product_table()
         self.update_sales_table()
 
     # Excluir produto
-    def delete_product(self):
-        selected = self.product_table.currentRow()
-        if selected == -1:
-            QtWidgets.QMessageBox.warning(self, "Aviso", "Selecione um produto")
-            return
-        product = self.data["products"][selected]
-        reply = QtWidgets.QMessageBox.question(
-            self, "Excluir Produto",
-            f"Tem certeza que deseja excluir '{product['name']}'?",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
-        )
-        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
-            self.data["products"].pop(selected)
-            self.data["sales"] = [s for s in self.data["sales"] if s["product_id"] != product["id"]]
-            save_data(self.data)
-            self.update_product_table()
-            self.update_sales_table()
+    def delete_product(self, product_id):
+        self.data["products"] = [p for p in self.data["products"] if p["id"] != product_id]
+        save_data(self.data)
+        self.update_product_table()
+        self.update_sales_table()
 
     # Registrar venda
     def sell_product(self):
@@ -200,14 +176,15 @@ class InventoryApp(QtWidgets.QMainWindow):
         if selected == -1:
             QtWidgets.QMessageBox.warning(self, "Aviso", "Selecione um produto")
             return
-        product = self.data["products"][selected]
+        product_id = self.product_table.item(selected,0).text()
+        product = next(p for p in self.data["products"] if p["id"]==product_id)
         quantity, ok = QtWidgets.QInputDialog.getInt(self, "Venda", "Quantidade vendida:")
         if not ok: return
         if product["quantity"] < quantity:
             QtWidgets.QMessageBox.critical(self, "Erro", "Estoque insuficiente")
             return
         product["quantity"] -= quantity
-        sale = Sale(product["id"], quantity, product["price"]*quantity)
+        sale = Sale(product_id, quantity, product["price"]*quantity)
         self.data["sales"].append(sale.__dict__)
         save_data(self.data)
         self.update_product_table()
@@ -215,57 +192,39 @@ class InventoryApp(QtWidgets.QMainWindow):
 
     # Total vendido
     def total_sales(self):
-        total = sum(s["total"] for s in self.data["sales"] if self.product_exists(s["product_id"]))
+        total = sum(s["total"] for s in self.data["sales"] if any(p["id"]==s["product_id"] for p in self.data["products"]))
         QtWidgets.QMessageBox.information(self, "Total vendido", f"Total vendido: R${total}")
 
-    # Total vendido por período
+    # Total por período
     def total_sales_period(self):
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Selecione Período")
+        dialog.setWindowTitle("Total por período")
         layout = QtWidgets.QVBoxLayout(dialog)
 
-        layout.addWidget(QtWidgets.QLabel("Data inicial:"))
-        start_date = QtWidgets.QDateEdit()
+        start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         start_date.setCalendarPopup(True)
-        start_date.setDisplayFormat("dd/MM/yyyy")
-        start_date.setDate(QtCore.QDate.currentDate().addMonths(-1))
+        layout.addWidget(QtWidgets.QLabel("Data inicial:"))
         layout.addWidget(start_date)
 
-        layout.addWidget(QtWidgets.QLabel("Data final:"))
-        end_date = QtWidgets.QDateEdit()
+        end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         end_date.setCalendarPopup(True)
-        end_date.setDisplayFormat("dd/MM/yyyy")
-        end_date.setDate(QtCore.QDate.currentDate())
+        layout.addWidget(QtWidgets.QLabel("Data final:"))
         layout.addWidget(end_date)
 
-        btn_ok = QtWidgets.QPushButton("Calcular Total")
-        layout.addWidget(btn_ok)
+        btn = QtWidgets.QPushButton("Calcular")
+        layout.addWidget(btn)
 
         def calculate():
-            start = start_date.date().toPyDate()
-            end = end_date.date().toPyDate()
-            if start > end:
-                QtWidgets.QMessageBox.critical(self, "Erro", "Data inicial maior que a final!")
-                return
+            start = datetime.strptime(start_date.text(), "%d/%m/%Y")
+            end = datetime.strptime(end_date.text(), "%d/%m/%Y")
             total = sum(s["total"] for s in self.data["sales"]
-                        if start <= datetime.fromisoformat(s["date"]).date() <= end
-                        and self.product_exists(s["product_id"]))
-            QtWidgets.QMessageBox.information(
-                self,
-                "Total vendido",
-                f"Total vendido de {start.strftime('%d/%m/%Y')} até {end.strftime('%d/%m/%Y')}: R${total}"
-            )
-            dialog.close()
-
-        btn_ok.clicked.connect(calculate)
+                        if start <= datetime.fromisoformat(s["date"]) <= end)
+            QtWidgets.QMessageBox.information(dialog, "Total vendido", f"Total vendido: R${total}")
+        btn.clicked.connect(calculate)
         dialog.exec()
 
-    def product_exists(self, product_id):
-        return any(p["id"] == product_id for p in self.data["products"])
-
 # Rodar app
-if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
-    window = InventoryApp()
-    window.show()
-    sys.exit(app.exec())
+app = QtWidgets.QApplication(sys.argv)
+window = InventoryApp()
+window.show()
+sys.exit(app.exec())

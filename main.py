@@ -21,8 +21,9 @@ class Product:
         self.date_added = datetime.now().isoformat()
 
 class Sale:
-    def __init__(self, product_id, quantity_sold, total):
+    def __init__(self, product_id, product_name, quantity_sold, total):
         self.product_id = product_id
+        self.product_name = product_name
         self.quantity_sold = quantity_sold
         self.total = total
         self.date = datetime.now().isoformat()
@@ -45,6 +46,12 @@ class InventoryApp(QtWidgets.QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.setGeometry(200, 100, 950, 550)
         self.data = load_data()
+        # Corrige vendas antigas sem product_name
+        for s in self.data["sales"]:
+            if "product_name" not in s:
+                prod = next((p for p in self.data["products"] if p["id"]==s["product_id"]), None)
+                s["product_name"] = prod["name"] if prod else "Produto excluído"
+        save_data(self.data)
         self.setup_ui()
         self.update_product_table()
         self.update_sales_table()
@@ -75,7 +82,7 @@ class InventoryApp(QtWidgets.QMainWindow):
         self.product_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.product_table)
 
-        # Botões
+        # Botões produtos
         btn_layout = QtWidgets.QHBoxLayout()
         layout.addLayout(btn_layout)
         self.btn_add = QtWidgets.QPushButton("Adicionar Produto")
@@ -95,7 +102,7 @@ class InventoryApp(QtWidgets.QMainWindow):
         # Tabela vendas
         self.sales_table = QtWidgets.QTableWidget()
         self.sales_table.setColumnCount(5)
-        self.sales_table.setHorizontalHeaderLabels(["Produto", "Quantidade", "Total", "Data", "ID Produto"])
+        self.sales_table.setHorizontalHeaderLabels(["Produto", "Quantidade", "Total", "Data", "Ações"])
         self.sales_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.sales_table)
 
@@ -125,16 +132,22 @@ class InventoryApp(QtWidgets.QMainWindow):
     # Atualiza vendas
     def update_sales_table(self):
         search_text = self.sales_search.text().lower()
-        sales = [s for s in self.data["sales"]
-                 if any(p["id"]==s["product_id"] and search_text in p["name"].lower() for p in self.data["products"])]
+        sales = [s for s in self.data["sales"] if search_text in s["product_name"].lower()]
         self.sales_table.setRowCount(len(sales))
         for row, s in enumerate(sales):
-            prod = next((p for p in self.data["products"] if p["id"]==s["product_id"]), None)
-            self.sales_table.setItem(row, 0, QtWidgets.QTableWidgetItem(prod["name"] if prod else "Produto excluído"))
+            self.sales_table.setItem(row, 0, QtWidgets.QTableWidgetItem(s["product_name"]))
             self.sales_table.setItem(row, 1, QtWidgets.QTableWidgetItem(str(s["quantity_sold"])))
             self.sales_table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"R${s['total']}"))
             self.sales_table.setItem(row, 3, QtWidgets.QTableWidgetItem(s["date"]))
-            self.sales_table.setItem(row, 4, QtWidgets.QTableWidgetItem(s["product_id"]))
+            # Botão excluir
+            btn_delete = QtWidgets.QPushButton("Excluir")
+            btn_delete.clicked.connect(lambda checked, sale=s: self.delete_sale(sale))
+            widget = QtWidgets.QWidget()
+            layout_h = QtWidgets.QHBoxLayout()
+            layout_h.addWidget(btn_delete)
+            layout_h.setContentsMargins(0,0,0,0)
+            widget.setLayout(layout_h)
+            self.sales_table.setCellWidget(row, 4, widget)
 
     # Adicionar produto
     def add_product(self):
@@ -168,6 +181,7 @@ class InventoryApp(QtWidgets.QMainWindow):
         self.data["products"] = [p for p in self.data["products"] if p["id"] != product_id]
         save_data(self.data)
         self.update_product_table()
+        # Vendas continuam, com product_name preservado
         self.update_sales_table()
 
     # Registrar venda
@@ -184,15 +198,21 @@ class InventoryApp(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, "Erro", "Estoque insuficiente")
             return
         product["quantity"] -= quantity
-        sale = Sale(product_id, quantity, product["price"]*quantity)
+        sale = Sale(product_id, product["name"], quantity, product["price"]*quantity)
         self.data["sales"].append(sale.__dict__)
         save_data(self.data)
         self.update_product_table()
         self.update_sales_table()
 
+    # Excluir venda
+    def delete_sale(self, sale):
+        self.data["sales"].remove(sale)
+        save_data(self.data)
+        self.update_sales_table()
+
     # Total vendido
     def total_sales(self):
-        total = sum(s["total"] for s in self.data["sales"] if any(p["id"]==s["product_id"] for p in self.data["products"]))
+        total = sum(s["total"] for s in self.data["sales"])
         QtWidgets.QMessageBox.information(self, "Total vendido", f"Total vendido: R${total}")
 
     # Total por período

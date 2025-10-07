@@ -1,4 +1,4 @@
-name: RTImportações
+name: Build BKApp
 
 on:
   push:
@@ -11,36 +11,36 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # Passo 1: Clonar o repositório
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      # 1️⃣ Clonar repositório
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    # Passo 2: Instalar Python
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+      # 2️⃣ Configurar Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-    # Passo 3: Instalar dependências
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller pyqt6
+      # 3️⃣ Instalar dependências
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pyqt6
 
-    # Passo 4: Criar pasta de build limpa
-    - name: Clean previous builds
-      run: |
-        rmdir /s /q build || echo "No previous build"
-        rmdir /s /q dist || echo "No previous dist"
+      # 4️⃣ Limpar builds anteriores
+      - name: Clean previous builds
+        run: |
+          rmdir /s /q build || echo "No previous build"
+          rmdir /s /q dist || echo "No previous dist"
 
-    # Passo 5: Gerar executável
-    - name: Build executable
-      run: |
-        pyinstaller --onefile --windowed main.py --name BKApp
+      # 5️⃣ Gerar executável
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --windowed main.py --name BKApp
 
-    # Passo 6: Fazer upload do executável como artefato
-    - name: Upload executable
-      uses: actions/upload-artifact@v3
-      with:
-        name: BKApp-exe
-        path: dist/BKApp.exe
+      # 6️⃣ Fazer upload do executável como artefato
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: BKApp-exe
+          path: dist/BKApp.exe
